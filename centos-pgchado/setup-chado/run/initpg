@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+# install postgresql(9.2)
+echo 'NETWORKING=yes' > /etc/sysconfig/network
+yum -y --exclude=upstart\* update
+cp /config/CentOS-Base.repo /etc/yum.repos.d/
+rpm -ivh http://yum.postgresql.org/9.2/redhat/rhel-6-x86_64/pgdg-centos92-9.2-6.noarch.rpm
+yum -y install postgresql92-server postgresql92-contrib
+
+# setup database
+service postgresql-9.2 initdb
+service postgresql-9.2 start
+
+
+# account setup
+su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres'"
+su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -r admin
+su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE admin PASSWORD 'admin'"
+
+# add custom configuration; restart to take effect
+cp /config/pg_hba.conf /var/lib/pgsql/9.2/data/
+cp /config/postgresql.conf /var/lib/pgsql/9.2/data/
+service postgresql-9.2 restart
+
+# create admin database
+PGPASSWORD=admin createdb -U admin admin
+
+#create chado user and database
+PGPASSWORD=admin createuser -U admin -d -E -l chado
+PGPASSWORD=admin psql -U admin -c "ALTER ROLE chado PASSWORD 'chado'"
+PGPASSWORD=chado createdb -U chado -h 127.0.0.1 chado
+PGPASSWORD=chado psql -q -U chado -h 127.0.0.1 -f /chado/schema.sql chado
+
