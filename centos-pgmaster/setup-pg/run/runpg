@@ -1,0 +1,5 @@
+#!/bin/bash
+
+service postgresql-9.2 start
+format=`date '+%Y-%m'`
+tail -f /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
