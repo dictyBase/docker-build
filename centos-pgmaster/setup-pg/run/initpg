@@ -14,9 +14,16 @@ su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE admin PASSWORD 'admin
 # add custom configuration; restart to take effect
 cp /config/pg_hba.conf /var/lib/pgsql/9.2/data/
 cp /config/postgresql.conf /var/lib/pgsql/9.2/data/
+
+# kernel parameters to allow cus
+sysctl -q kernel.shmmax=3221225472
 service postgresql-9.2 restart
 
 # create admin database
 PGPASSWORD=admin createdb -U admin admin
+
+# create user for replication
+PGPASSWORD=postgres createuser -U postgres -s -l -E --replication replica
+PGPASSWORD=postgres psql -U postgres -c "ALTER ROLE replica PASSWORD 'replica'"
 
 
