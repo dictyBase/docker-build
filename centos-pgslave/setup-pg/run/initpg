@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+FOLDER=/var/lib/pgsql/9.2
+BACKUP=${FOLDER}/backups
+ARCHIVE=${FOLDER}/archive
+DATA=${FOLDER}/data
+
 # setup database
 service postgresql-9.2 initdb
 service postgresql-9.2 start
@@ -12,8 +17,8 @@ su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -s admin
 su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE admin PASSWORD 'admin'"
 
 # add custom configuration; restart to take effect
-cp /config/pg_hba.conf /var/lib/pgsql/9.2/data/
-cp /config/postgresql.conf /var/lib/pgsql/9.2/data/
+cp /config/pg_hba.conf  $DATA/
+cp /config/postgresql.conf $DATA/
 
 # kernel parameters to allow cus
 sysctl -q kernel.shmmax=3221225472
@@ -21,6 +26,15 @@ service postgresql-9.2 restart
 
 # create admin database
 PGPASSWORD=admin createdb -U admin admin
+
+# create folders
+if [ ! -e $BACKUP ]; then 
+    su postgres -s /bin/mkdir -- -p $BACKUP
+fi
+
+if [ ! -e $ARCHIVE ]; then 
+    su postgres -s /bin/mkdir -- -p $ARCHIVE
+fi
 
 
 
