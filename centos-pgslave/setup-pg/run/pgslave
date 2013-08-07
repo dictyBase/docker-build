@@ -1,13 +1,12 @@
 #!/bin/bash
 
 FOLDER=/var/lib/pgsql/9.2
-BACKUP=${FOLDER}/backups
 DATA=${FOLDER}/data
-BACKUPTOOL=/usr/pgsql-9.2/bin/pg_basebackup
+BACKUP=${FOLDER}/backups
 ARCHIVE=${FOLDER}/archive
+BACKUPTOOL=/usr/pgsql-9.2/bin/pg_basebackup
 
 
-OPTSPEC="i:u:p:shrp"
 
 err() {
     read -r -d '' errmsg <<-ERRMSG
@@ -30,7 +29,7 @@ usage() {
         * Just do 'docker run cybersiddhu/centos6-pgslave' for this help.
 
     1. Prepare postgresql server(one time)
-       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -p
+       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -P
 
     2. Initialize slave setup(one time)
        docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -s -i <ip> -u <username> -p <password> 
@@ -86,14 +85,19 @@ preparepg() {
 
     # create folders
     if [ ! -e $BACKUP ]; then 
-        su postgres -s /bin/mkdir -- -p $BACKUP
+        mkdir -p $BACKUP
+        chown postgres:postgres $BACKUP
     fi
 
     if [ ! -e $ARCHIVE ]; then 
-        su postgres -s /bin/mkdir -- -p $ARCHIVE
+        mkdir -p $ARCHIVE
+        chown postgres:postgres $ARCHIVE
     fi
+    service postgresql-9.2 stop
 }
 
+
+OPTSPEC="i:u:p:shrP"
 while getopts $OPTSPEC option
 do
     case $option in
@@ -107,36 +111,29 @@ do
             ;;
         r) run=1
             ;;
-        p) prepare=1
+        P) prepare=1
             ;;
         h) usage && exit 0
            ;;
+        \?) echo "invalid option -$OPTARG" && exit 1
+            ;;
     esac
 done
 
-if [ $OPTIND -eq 8 -a ${setup+defined} ]
+if [ $OPTIND -eq 1 ]
 then
-
-    if [ -e "${DATA}/recovery.conf" ]; then
-        errmsg
-        exit 0
+    usage
+elif [ $OPTIND -eq 2 ]
+then
+    if [ ${run+defined} ]
+    then
+        startpg
+    elif [ ${prepare+defined} ]
+    then
+        preparepg
+    else
+        usage
     fi
-
-    read -r -d '' recovery <<-EOR
-
-        standby_mode = 'on'
-        primary_conninfo = 'host=$ip port=5432 user=$user password=$password'
-
-EOR
-
-    su postgres -s /bin/echo -- "$recovery" > ${DATA}/recovery.conf
-
-    if [ ! -e $BACKUP ]; then 
-        su postgres -s /bin/mkdir -- -p $BACKUP
-    fi
-
-    PGPASSWORD=$password su postgres -s $BACKUPTOOL -- -h $ip -U $user -c fast -P -D $BACKUP
-    su postgres -s /usr/bin/rsync -- -avP --exclude '*.conf'  --exclude pg_xlog --exclude 'postmaster.pid' $BACKUP/  $DATA/
 
 elif [ $OPTIND -eq 8 -a ${run+defined} -a ${ip+defined} -a ${user+defined} -a ${password+defined} ]
 then
@@ -151,14 +148,32 @@ EOR
     su postgres -s /bin/echo -- "$recovery" > ${DATA}/recovery.conf
     startpg
 
-elif [ $OPTIND -eq 2 -a ${run+defined} ]
+elif [ $OPTIND -eq 8 -a ${setup+defined} -a ${ip+defined} -a ${user+defined} -a ${password+defined} ]
 then
-    startpg
+     if [ -e "${DATA}/recovery.conf" ]; then
+        errmsg
+        exit 0
+    fi
 
-elif [ $OPTIND -eq 2 -a ${prepare+defined} ]
-then
-    preparepg
+    read -r -d '' recovery <<-EOR
 
+        standby_mode = 'on'
+        primary_conninfo = 'host=$ip port=5432 user=$user password=$password'
+EOR
+
+    su postgres -s /bin/echo -- "$recovery" > ${DATA}/recovery.conf
+
+    if [ ! -e $BACKUP ]; then 
+        mkdir -p $BACKUP
+        chown postgres:postgres $BACKUP
+    fi
+
+    PGPASSWORD=$password su postgres -s $BACKUPTOOL -- -h $ip -U $user -c fast -P -D $BACKUP
+    su postgres -s /usr/bin/rsync -- -aP --exclude '*.conf'  --exclude pg_xlog --exclude 'postmaster.pid' $BACKUP/  $DATA/
+    chmod 0700 $DATA
+    sysctl -q kernel.shmmax=3221225472
+    service postgresql-9.2 start
+    service postgresql-9.2 stop
 else
     usage
 fi
