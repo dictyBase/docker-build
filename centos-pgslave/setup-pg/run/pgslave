@@ -4,9 +4,10 @@ FOLDER=/var/lib/pgsql/9.2
 BACKUP=${FOLDER}/backups
 DATA=${FOLDER}/data
 BACKUPTOOL=/usr/pgsql-9.2/bin/pg_basebackup
+ARCHIVE=${FOLDER}/archive
 
 
-OPTSPEC="i:u:p:shr"
+OPTSPEC="i:u:p:shrp"
 
 err() {
     read -r -d '' errmsg <<-ERRMSG
@@ -28,8 +29,8 @@ usage() {
           now and allows database data to be persistent from run to run.
         * Just do 'docker run cybersiddhu/centos6-pgslave' for this help.
 
-    1. Initialize postgresql server(one time)
-       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave /run/initpg
+    1. Prepare postgresql server(one time)
+       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -p
 
     2. Initialize slave setup(one time)
        docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -s -i <ip> -u <username> -p <password> 
@@ -61,6 +62,38 @@ startpg() {
     tail -f /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
 }
 
+preparepg() {
+    # setup database
+    service postgresql-9.2 initdb
+    service postgresql-9.2 start
+
+
+    # account setup
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres'"
+    su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -s admin
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE admin PASSWORD 'admin'"
+
+    # add custom configuration; restart to take effect
+    cp /config/pg_hba.conf  $DATA/
+    cp /config/postgresql.conf $DATA/
+
+    # kernel parameters to allow cus
+    sysctl -q kernel.shmmax=3221225472
+    service postgresql-9.2 restart
+
+    # create admin database
+    PGPASSWORD=admin createdb -U admin admin
+
+    # create folders
+    if [ ! -e $BACKUP ]; then 
+        su postgres -s /bin/mkdir -- -p $BACKUP
+    fi
+
+    if [ ! -e $ARCHIVE ]; then 
+        su postgres -s /bin/mkdir -- -p $ARCHIVE
+    fi
+}
+
 while getopts $OPTSPEC option
 do
     case $option in
@@ -73,6 +106,8 @@ do
         s) setup=1
             ;;
         r) run=1
+            ;;
+        p) prepare=1
             ;;
         h) usage && exit 0
            ;;
@@ -119,6 +154,11 @@ EOR
 elif [ $OPTIND -eq 2 -a ${run+defined} ]
 then
     startpg
+
+elif [ $OPTIND -eq 2 -a ${prepare+defined} ]
+then
+    preparepg
+
 else
     usage
 fi
