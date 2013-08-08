@@ -1914,8 +1914,8 @@ CREATE VIEW type_feature_count AS
    FROM cvterm AS t INNER JOIN feature ON (type_id=t.cvterm_id) 
   GROUP BY t.name;
 COMMENT ON VIEW type_feature_count IS 'per-feature-type feature counts';
-CREATE SCHEMA genetic_code;
-SET search_path = genetic_code,public,pg_catalog;
+--CREATE SCHEMA genetic_code;
+--SET search_path = genetic_code,public,pg_catalog;
 
 CREATE TABLE gencode (
         gencode_id      INTEGER PRIMARY KEY NOT NULL,
@@ -1935,7 +1935,7 @@ CREATE TABLE gencode_startcodon (
         codon           CHAR(3),
         CONSTRAINT gencode_startcodon_unique UNIQUE( gencode_id, codon )
 );
-SET search_path = public,pg_catalog;
+--SET search_path = public,pg_catalog;
 --
 -- functions operating on featureloc ranges
 --
@@ -2441,8 +2441,8 @@ CREATE OR REPLACE FUNCTION get_feature_id(VARCHAR,VARCHAR,VARCHAR) RETURNS INT
 --be saved.  Instead, modify bin/create-so-bridge.pl, which creates this file.
 
 
-CREATE SCHEMA so;
-SET search_path=so,public,pg_catalog;
+--CREATE SCHEMA so;
+--SET search_path=so,public,pg_catalog;
 
 --- ************************************************
 --- *** relation: region ***
@@ -37009,7 +37009,7 @@ INSERT INTO sequence_cv_lookup_table (original_cvterm_name,relation_name) VALUES
 CREATE INDEX sequence_cv_lookup_table_idx ON sequence_cv_lookup_table (original_cvterm_name);
 
 
-SET search_path=public,pg_catalog;
+--SET search_path=public,pg_catalog;
 -- DEPENDENCY:
 --  chado/modules/bridges/sofa-bridge.sql
 
@@ -37459,7 +37459,7 @@ BEGIN
 END;
 ' LANGUAGE 'plpgsql';
 CREATE SCHEMA frange;
-SET search_path = frange,public,pg_catalog;
+--SET search_path = frange,public,pg_catalog;
 
 CREATE TABLE featuregroup (
     featuregroup_id serial not null,
@@ -37742,7 +37742,7 @@ BEGIN
 END;   
 ' LANGUAGE 'plpgsql';
 
-SET search_path = public,pg_catalog;
+--SET search_path = public,pg_catalog;
 --- create ontology that has instantiated located_sequence_feature part of SO
 --- way as it is written, the function can not be execute more than once in one connection
 --- when you get error like ERROR:  relation with OID NNNNN does not exist
