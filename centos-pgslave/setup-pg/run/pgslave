@@ -169,7 +169,7 @@ EOR
     fi
 
     PGPASSWORD=$password su postgres -s $BACKUPTOOL -- -h $ip -U $user -c fast -P -D $BACKUP
-    su postgres -s /usr/bin/rsync -- -aP --exclude '*.conf'  --exclude pg_xlog --exclude 'postmaster.pid' $BACKUP/  $DATA/
+    su postgres -s /usr/bin/rsync -- -a --exclude '*.conf'  --exclude pg_xlog --exclude 'postmaster.pid' $BACKUP/  $DATA/
     chmod 0700 $DATA
     sysctl -q kernel.shmmax=3221225472
     service postgresql-9.2 start
