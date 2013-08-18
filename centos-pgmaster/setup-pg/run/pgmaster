@@ -55,6 +55,7 @@ EMSG
 stoppg() {
     service postgresql-9.2 stop
     logger stopped postgresql service
+    exit $1
 }
 
 startpg() {
@@ -65,7 +66,12 @@ startpg() {
     logger started postgresql service
 
     format=`date '+%Y-%m'`
-    tail -f /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    tail  -n 50 /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    while [ true ];
+    do
+        sleep 50
+    done
+
 }
 
 preparepg() {
@@ -103,7 +109,7 @@ preparepg() {
     service postgresql-9.2 stop
 }
 
-trap 'stoppg; exit' SIGHUP SIGINT SIGQUIT SIGTERM
+trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM
 
 OPTSPEC="u:p:ShRP"
 while getopts $OPTSPEC option

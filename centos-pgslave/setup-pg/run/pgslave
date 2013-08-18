@@ -26,13 +26,15 @@ usage() {
     Rule of thumb:
         * Always have to pass the -v option for <host>:<image> volume mapping. That's currently the way docker works
           now and allows database data to be persistent from run to run.
-        * Just do 'docker run cybersiddhu/centos6-pgslave' for this help.
+        * Just do 'docker run <image>' for this help.
 
     1. Prepare postgresql server(one time)
-       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -P
+
+       docker run -v <host-folder>:/var/lib/pgsql <image> -P
 
     2. Initialize slave setup(one time)
-       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -s -i <ip> -u <username> -p <password> 
+
+       docker run -v <host-folder>:/var/lib/pgsql <image> -S -i <ip> -u <username> -p <password> 
 
        -i : IP address of the master node
        -u : User name of database user with replication priviledge in master node
@@ -40,9 +42,10 @@ usage() {
        -s : Run the initial slave setup
 
     3. Start an instance(every time)
-       docker run -v <host-folder>:/var/lib/pgsql cybersiddhu/centos6-pgslave -r -i [ip] -u [username] -p [password] 
 
-       -r start the slave pg instance
+       docker run -v <host-folder>:/var/lib/pgsql <image> -R -i [ip] -u [username] -p [password] 
+
+       -R start the slave pg instance
 
        Rest of the arguments are optional here. Pass them if IP address of master has been changed.
 
@@ -58,7 +61,12 @@ startpg() {
     sysctl -q kernel.shmmax=3221225472
     service postgresql-9.2 start
     format=`date '+%Y-%m'`
-    tail -f /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    tail  -n 50 /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    while [ true ];
+    do
+        sleep 50
+    done
+
 }
 
 preparepg() {
@@ -96,8 +104,16 @@ preparepg() {
     service postgresql-9.2 stop
 }
 
+stoppg() {
+    service postgresql-9.2 stop
+    logger stopped postgresql service
+    exit $1
+}
 
-OPTSPEC="i:u:p:shrP"
+trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM
+
+
+OPTSPEC="i:u:p:ShRP"
 while getopts $OPTSPEC option
 do
     case $option in
