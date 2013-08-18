@@ -123,9 +123,9 @@ do
             ;;
         p) password=$OPTARG
             ;;
-        s) setup=1
+        S) setup=1
             ;;
-        r) run=1
+        R) run=1
             ;;
         P) prepare=1
             ;;
