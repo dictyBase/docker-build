@@ -1,5 +1,0 @@
-#!/bin/bash
-
-service postgresql-9.2 start
-month=`date '+%b'`
-tail -f /var/lib/pgsql/9.2/data/pg_log/postgresql-${month}.log

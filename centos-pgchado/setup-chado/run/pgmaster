@@ -1,0 +1,179 @@
+#!/bin/bash
+
+FOLDER=/var/lib/pgsql/9.2
+DATA=${FOLDER}/data
+BACKUP=${FOLDER}/backups
+ARCHIVE=${FOLDER}/archive
+
+
+
+err() {
+    read -r -d '' errmsg <<-ERRMSG
+        The setup seems to have completed 
+        Please now run with the (-r) argument OR
+        for help just run without any argument.
+ERRMSG
+
+    echo "$errmsg"
+}
+
+usage() {
+    read -r -d '' msg <<-EMSG
+
+    To run the docker image ......
+
+    Rule of thumb:
+        * Always have to pass the -v option for <host>:<image> volume mapping. That's currently the way docker works
+          now and allows database data to be persistent from run to run.
+        * Just do 'docker run <image>' for this help.
+
+    1. Prepare postgresql server(one time)
+
+       docker run -v <host-folder>:/var/lib/pgsql <image> -P
+
+
+    2. Create user(one time) with replication priviledge
+
+       docker run -v <host-folder>:/var/lib/pgsql <image> -S -u <username> -p <password> 
+
+        -u : User name of database user with replication priviledge which standby server will use to connect
+        -p : Password of the above user
+
+
+    3. Start an instance(every time)
+
+       docker run -d -v <host-folder>:/var/lib/pgsql  <image> -R 
+
+        -R start the master pg instance
+
+
+EMSG
+
+    echo  "$msg"
+}
+
+stoppg() {
+    service postgresql-9.2 stop
+    logger stopped postgresql service
+    exit $1
+}
+
+startpg() {
+
+    sysctl -q kernel.shmmax=3221225472
+    service postgresql-9.2 start
+
+    logger started postgresql service
+
+    format=`date '+%Y-%m'`
+    tail  -n 50 /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    while [ true ];
+    do
+        sleep 50
+    done
+
+}
+
+preparepg() {
+    # setup database
+    service postgresql-9.2 initdb
+    service postgresql-9.2 start
+
+
+    # account setup
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres'"
+    su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -s admin
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE admin PASSWORD 'admin'"
+
+    # add custom configuration; restart to take effect
+    cp /config/pg_hba.conf  $DATA/
+    cp /config/postgresql.conf $DATA/
+
+    # kernel parameters to allow cus
+    sysctl -q kernel.shmmax=3221225472
+    service postgresql-9.2 restart
+
+    # create admin database
+    PGPASSWORD=admin createdb -U admin admin
+
+    #create chado user and database
+    PGPASSWORD=admin createuser -U admin -d -E -l chado
+    PGPASSWORD=admin psql -U admin -c "ALTER ROLE chado PASSWORD 'chado'"
+    PGPASSWORD=chado createdb -U chado -h 127.0.0.1 chado
+
+
+    # create folders
+    if [ ! -e $BACKUP ]; then 
+        mkdir -p $BACKUP
+        chown postgres:postgres $BACKUP
+    fi
+
+    if [ ! -e $ARCHIVE ]; then 
+        mkdir -p $ARCHIVE
+        chown postgres:postgres $ARCHIVE
+    fi
+    service postgresql-9.2 stop
+}
+
+trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM
+
+OPTSPEC="u:p:ShRP"
+while getopts $OPTSPEC option
+do
+    case $option in
+        u) user=$OPTARG
+            ;;
+        p) password=$OPTARG
+            ;;
+        S) setup=1
+            ;;
+        R) run=1
+            ;;
+        P) prepare=1
+            ;;
+        h) usage && exit 0
+           ;;
+        \?) echo "invalid option -$OPTARG" && exit 1
+            ;;
+    esac
+done
+
+if [ $OPTIND -eq 1 ]
+then
+    usage
+elif [ $OPTIND -eq 2 ]
+then
+    if [ ${run+defined} ]
+    then
+        startpg
+    elif [ ${prepare+defined} ]
+    then
+        preparepg
+    else
+        usage
+    fi
+
+elif [ $OPTIND -eq 6 -a ${setup+defined} -a ${user+defined} -a ${password+defined} ]
+then
+    read -r -d '' replication <<-EOR
+
+        host  replication  $user  0.0.0.0/0   md5
+EOR
+
+    su postgres -s /bin/echo -- "$replication" >> ${DATA}/pg_hba.conf
+
+    sysctl -q kernel.shmmax=3221225472
+    service postgresql-9.2 start
+
+    # create user for replication
+    PGPASSWORD=postgres createuser -U postgres -s -l -E --replication $user
+    PGPASSWORD=postgres psql -U postgres -c "ALTER ROLE replica PASSWORD '$password'"
+    service postgresql-9.2 stop
+
+else
+    usage
+fi
+
+
+
+
