@@ -1,13 +1,11 @@
-FROM cybersiddhu/centos6-pgbase
+FROM cybersiddhu/centos6
 MAINTAINER 'Siddhartha Basu<sidd.basu@gmail.com>'
 
-RUN yum -y --exclude=upstart\* update
-RUN yum -y --exclude=upstart\* upgrade
+RUN mkdir /run /config
+ADD setup-pg/run /run
+ADD setup-pg/config /config
+RUN /run/pgset
 
-RUN if [-e "/run" ]; then rm -rf /run; fi 
-RUN if [-e "/config" ]; then rm -rf /config; fi 
-
-ADD setup-pg /
 ENTRYPOINT ["/run/pgmaster"]
 CMD ["-h"]
 
