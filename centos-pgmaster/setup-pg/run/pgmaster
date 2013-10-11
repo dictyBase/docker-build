@@ -40,11 +40,23 @@ usage() {
         -p : Password of the above user
 
 
+
     3. Start an instance(every time)
 
        docker run -d -v <host-folder>:/var/lib/pgsql  <image> -R 
 
         -R start the master pg instance
+
+
+
+    4. Create an database 
+
+       docker run -v <host-folder>:/var/lib/pgsql <image> -C <dbname>
+
+       The above with create a database and user with the given name. The name
+       will also be assigned as the starting password. Please, change it as
+       neccessary.
+       
 
 
 EMSG
@@ -109,9 +121,15 @@ preparepg() {
     service postgresql-9.2 stop
 }
 
+newuser() {
+    PGPASSWORD=admin createuser -U admin -d -E -l $1
+    PGPASSWORD=admin psql -U admin -c "ALTER ROLE $1 PASSWORD '$1'"
+    PGPASSWORD=$1 createdb -U $1 -h 127.0.0.1 $1
+}
+
 trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL
 
-OPTSPEC="u:p:ShRP"
+OPTSPEC="u:p:C:ShRP"
 while getopts $OPTSPEC option
 do
     case $option in
@@ -120,6 +138,8 @@ do
         p) password=$OPTARG
             ;;
         S) setup=1
+            ;;
+        C) dbname=$OPTARG
             ;;
         R) run=1
             ;;
@@ -146,7 +166,6 @@ then
     else
         usage
     fi
-
 elif [ $OPTIND -eq 6 -a ${setup+defined} -a ${user+defined} -a ${password+defined} ]
 then
     read -r -d '' replication <<-EOR
@@ -163,7 +182,15 @@ EOR
     PGPASSWORD=postgres createuser -U postgres -s -l -E --replication $user
     PGPASSWORD=postgres psql -U postgres -c "ALTER ROLE replica PASSWORD '$password'"
     service postgresql-9.2 stop
-
+elif [ $OPTIND -eq 3 ]
+then
+    if [ ${dbname+defined} ]
+    then
+        sysctl -q kernel.shmmax=3221225472
+        service postgresql-9.2 restart
+        newuser $dbname
+        stoppg
+    fi
 else
     usage
 fi
