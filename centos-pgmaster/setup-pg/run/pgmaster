@@ -4,8 +4,38 @@ FOLDER=/var/lib/pgsql/9.2
 DATA=${FOLDER}/data
 BACKUP=${FOLDER}/backups
 ARCHIVE=${FOLDER}/archive
+DEFAULT_SERVICE=postgresql-service
+DEFAULT_DIR_KEY=docker-container
+DEFAULT_CNAME=container
 
 
+getip() {
+    local ip=$(ip -4 -o addr show eth0 | awk '{split($4,a,"/"); print a[1]}')
+    echo $ip
+}
+
+getkey(){
+        [ ${REGISTER_DIR_KEY+defined} ] && DEFAULT_DIR_KEY=${REGISTER_DIR_KEY}
+        [ ${REGISTER_SERVICE+defined} ] && DEFAULT_SERVICE=${REGISTER_SERVICE}
+        local key=http://${DOCKER_INTERFACE}:4001/v1/keys/${DEFAULT_DIR_KEY}/${DEFAULT_SERVICE}/$1
+        echo $key
+}
+
+subscribehost() {
+    if [ ${DOCKER_INTERFACE+defined} ];then
+        local hostkey=$(getkey $1)/host
+        [ $(curl -i -L $hostkey --stderr /dev/null | awk '/HTTP/ {print $2}') -eq 200 ] &&  curl -L $hostkey --stderr /dev/null -X DELETE
+        local ip=$(getip)
+        [ $(curl -i -L $hostkey --stderr /dev/null -d value="${ip}" | awk '/HTTP/ {print $2}') -eq 200 ] || echo unable to register host
+    fi
+}
+
+unsubscribehost() {
+    if [ ${DOCKER_INTERFACE+defined} ];then
+        local hostkey=$(getkey $1)/host
+        [ $(curl -i -L $hostkey --stderr /dev/null | awk '/HTTP/ {print $2}') -eq 200 ] &&  curl -L $hostkey --stderr /dev/null -X DELETE
+    fi
+}
 
 err() {
     read -r -d '' errmsg <<-ERRMSG
@@ -43,9 +73,10 @@ usage() {
 
     3. Start an instance(every time)
 
-       docker run -d -v <host-folder>:/var/lib/pgsql  <image> -R 
+       docker run -d -v <host-folder>:/var/lib/pgsql  <image> -R <container name>
 
         -R start the master pg instance
+           Needs a container name to register with etcd service
 
 
 
@@ -66,7 +97,8 @@ EMSG
 
 stoppg() {
     service postgresql-9.2 stop
-    logger stopped postgresql service
+    logger -s stopped postgresql service
+    [ ${DOCKER_INTERFACE+defined} ] && unsubscribehost $DEFAULT_CNAME
     exit $1
 }
 
@@ -75,13 +107,13 @@ startpg() {
     sysctl -q kernel.shmmax=3221225472
     service postgresql-9.2 start
 
-    logger started postgresql service
+    logger -s started postgresql service
 
     format=`date '+%Y-%m'`
-    tail  -n 50 /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
+    tail  -n 30 /var/lib/pgsql/9.2/data/pg_log/postgresql-${format}.log
     while [ true ];
     do
-        sleep 2000
+        sleep 20
     done
 
 }
@@ -127,9 +159,9 @@ newuser() {
     PGPASSWORD=$1 createdb -U $1 -h 127.0.0.1 $1
 }
 
-trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL
+trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL SIGSTOP
 
-OPTSPEC="u:p:C:ShRP"
+OPTSPEC="u:p:C:R:ShP"
 while getopts $OPTSPEC option
 do
     case $option in
@@ -141,7 +173,7 @@ do
             ;;
         C) dbname=$OPTARG
             ;;
-        R) run=1
+        R) run=$OPTARG
             ;;
         P) prepare=1
             ;;
@@ -157,10 +189,7 @@ then
     usage
 elif [ $OPTIND -eq 2 ]
 then
-    if [ ${run+defined} ]
-    then
-        startpg
-    elif [ ${prepare+defined} ]
+    if [ ${prepare+defined} ]
     then
         preparepg
     else
@@ -184,7 +213,12 @@ EOR
     service postgresql-9.2 stop
 elif [ $OPTIND -eq 3 ]
 then
-    if [ ${dbname+defined} ]
+    if [ ${run+defined} ]
+    then
+        subscribehost $run
+        DEFAULT_CNAME=$run
+        startpg
+    elif [ ${dbname+defined} ]
     then
         sysctl -q kernel.shmmax=3221225472
         service postgresql-9.2 restart
