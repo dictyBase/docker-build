@@ -115,7 +115,7 @@ preparepg() {
     service postgresql-9.2 stop
 }
 
-trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL
+trap stoppg SIGHUP SIGINT SIGQUIT SIGTERM SIGKILL SIGSTOP SIGALRM
 
 OPTSPEC="u:p:ShRP"
 while getopts $OPTSPEC option
