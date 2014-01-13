@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# install postgresql(9.2)
+echo 'NETWORKING=yes' > /etc/sysconfig/network
+cp /config/pg.conf /etc/supervisor/conf.d/postgresql.conf
+rpm -ivh http://yum.postgresql.org/9.2/redhat/rhel-6-x86_64/pgdg-centos92-9.2-6.noarch.rpm
+yum -y install postgresql92-server postgresql92-contrib rsync
+
+
