@@ -1,0 +1,175 @@
+#!/bin/bash
+
+FOLDER=/var/lib/pgsql/9.2
+DATA=${FOLDER}/data
+BACKUP=${FOLDER}/backups
+ARCHIVE=${FOLDER}/archive
+SPCTL=/usr/bin/supervisorctl
+declare -a fdw=('mysql_fdw')
+
+
+usage() {
+    read -r -d '' msg <<-EMSG
+
+    To run the docker image ......
+
+    Rule of thumb:
+        * You need to have an instance of data container. Build the data container using the pgdata dockerfile.
+          Or else create a data container by mapping a volume to /var/lib/pgsql
+        * Always have to pass the -volumes-from option. That's currently the way docker works
+          now and allows database data to be persistent from run to run and portable across systems.
+
+    1. Prepare postgresql server, absolutely required, run only once.
+
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -P
+
+       It will also create an admin user *docker* with password *docker*.
+
+    2. Create user(one time) with replication priviledge, highly optional.
+
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -S -u <username> -p <password> 
+
+        -u : User name of database user with replication priviledge which standby server will use to connect
+        -p : Password of the above user
+
+    3. Create an user and database, highly optional but recommended. It will also setup postgres_fdw, file_fdw and mysql_fdw extensions
+        under that user in the same database.
+
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -C <dbname>
+
+       The above with create a database and user with the given name. The name
+       will also be assigned as the starting password. Please, change it as
+       neccessary. *However* this setup has to be run before you change the admin password.
+
+EMSG
+
+    echo  "$msg"
+}
+
+stoppg() {
+    $SPCTL stop postgresql
+    logger -s stopped postgresql service
+    exit $1
+}
+
+startpgback() {
+    /usr/bin/supervisord  -c /etc/supervisord.conf
+    sleep 4
+}
+
+
+restartpgback() {
+    sysctl -q -w kernel.shmmax=3221225472
+    $SPCTL restart postgresql
+}
+
+
+preparepg() {
+    # setup database
+    chmod g+rx,o+rx /var/lib/pgsql
+    service postgresql-9.2 initdb
+    startpgback
+
+    # account setup
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres'"
+    su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -s docker
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE docker PASSWORD 'docker'"
+
+    # add custom configuration; restart to take effect
+    cp /config/pg_hba.conf  $DATA/
+    cp /config/postgresql.conf $DATA/
+    restartpgback
+
+    # create admin database
+    PGPASSWORD=docker createdb -U docker docker
+
+    # create folders
+    if [ ! -e $BACKUP ]; then 
+        mkdir -p $BACKUP
+        chown postgres:postgres $BACKUP
+    fi
+
+    if [ ! -e $ARCHIVE ]; then 
+        mkdir -p $ARCHIVE
+        chown postgres:postgres $ARCHIVE
+    fi
+    stoppg
+}
+
+newuser() {
+    PGPASSWORD=docker createuser -U docker -d -E -l $1
+    PGPASSWORD=docker psql -U docker -c "ALTER ROLE $1 PASSWORD '$1'"
+    PGPASSWORD=$1 createdb -U $1 -h 127.0.0.1 $1
+
+    #file_fdw
+    PGPASSWORD=docker psql -U docker -c "CREATE EXTENSION file_fdw" $1
+
+    #postgres_fdw
+    USE_PGXS=1 pgxn install --pg_config /usr/pgsql-9.2/bin/pg_config postgres_fdw
+    PGPASSWORD=docker psql -U docker -c "CREATE EXTENSION postgres_fdw" $1
+    PGPASSWORD=docker psql -U docker -c "GRANT USAGE ON FOREIGN DATA WRAPPER postgres_fdw TO $1" $1
+
+    for name in "${fdw[@]}"
+    do
+        USE_PGXS=1 pgxn install --pg_config /usr/pgsql-9.2/bin/pg_config $name
+        PGPASSWORD=docker psql -U docker -c "CREATE EXTENSION $name" $1
+        PGPASSWORD=docker psql -U docker -c "GRANT USAGE ON FOREIGN DATA WRAPPER $name TO $1" $1
+    done
+}
+
+OPTSPEC="u:p:C:ShP"
+while getopts $OPTSPEC option
+do
+    case $option in
+        u) user=$OPTARG
+            ;;
+        p) password=$OPTARG
+            ;;
+        S) setup=1
+            ;;
+        C) dbname=$OPTARG
+            ;;
+        R) run=1
+            ;;
+        P) prepare=1
+            ;;
+        h) usage && exit 0
+           ;;
+        \?) echo "invalid option -$OPTARG" && exit 1
+            ;;
+    esac
+done
+
+if [ $OPTIND -eq 1 ]; then
+    usage
+elif [ $OPTIND -eq 2 ]; then
+    if [ ${prepare+defined} ]; then
+        preparepg
+    else
+        usage
+    fi
+elif [ $OPTIND -eq 6 -a ${setup+defined} -a ${user+defined} -a ${password+defined} ]
+then
+    read -r -d '' replication <<-EOR
+
+        host  replication  $user  0.0.0.0/0   md5
+EOR
+
+    su postgres -s /bin/echo -- "$replication" >> ${DATA}/pg_hba.conf
+
+    startpgback
+    # create user for replication
+    PGPASSWORD=postgres createuser -U postgres -s -l -E --replication $user
+    PGPASSWORD=postgres psql -U postgres -c "ALTER ROLE replica PASSWORD '$password'"
+    stoppg
+elif [ $OPTIND -eq 3 ]; then
+    if [ ${dbname+defined} ]; then
+        startpgback
+        newuser $dbname
+        stoppg
+    else
+        usage
+    fi
+else
+    usage
+fi

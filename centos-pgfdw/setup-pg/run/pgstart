@@ -1,0 +1,9 @@
+#!/bin/bash
+
+startpg() {
+    sysctl -q -w kernel.shmmax=3221225472
+    logger -s starting postgresql service
+    exec su postgres -c "/usr/pgsql-9.2/bin/postmaster -D /var/lib/pgsql/9.2/data"
+}
+
+startpg
