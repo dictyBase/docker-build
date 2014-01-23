@@ -9,31 +9,36 @@ SPCTL=/usr/bin/supervisorctl
 
 usage() {
     read -r -d '' msg <<-EMSG
-
     To run the docker image ......
 
     Rule of thumb:
-        * Always have to pass the -v option for <host>:<image> volume mapping. That's currently the way docker works
-          now and allows database data to be persistent from run to run.
+        * You need to have an instance of data container. Build the data container using the pgdata dockerfile.
+          Or else create a data container by mapping a volume to /var/lib/pgsql
+        * Always have to pass the -volumes-from option. That's currently the way docker works
+          now and allows database data to be persistent from run to run and portable across systems.
 
     1. Prepare postgresql server, absolutely required, run only once.
 
-       docker run -v <host-folder>:/var/lib/pgsql <image> /run/pgsetup -P
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -P
+
+       It will also create an admin user *docker* with password *docker*.
 
     2. Create user(one time) with replication priviledge, highly optional.
 
-       docker run -v <host-folder>:/var/lib/pgsql <image> /run/pgsetup -S -u <username> -p <password> 
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -S -u <username> -p <password> 
 
         -u : User name of database user with replication priviledge which standby server will use to connect
         -p : Password of the above user
 
-    3. Create an database, highly optional
+    3. Create an user and database, highly optional but recommended. It will also setup postgres_fdw, file_fdw and mysql_fdw extensions
+        under that user in the same database.
 
-       docker run -v <host-folder>:/var/lib/pgsql <image> /run/pgsetup -C <dbname>
+       docker run -volumes-from (data-container-instance) (image) /run/pgsetup -C <dbname>
 
        The above with create a database and user with the given name. The name
        will also be assigned as the starting password. Please, change it as
-       neccessary.
+       neccessary. *However* this setup has to be run before you change the admin password.
+
 
 EMSG
 
@@ -60,6 +65,9 @@ restartpgback() {
 
 preparepg() {
     # setup database
+    if [ -e /var/lib/pgsql ]; then
+        chmod g+rx,o+rx /var/lib/pgsql
+    fi
     service postgresql-9.2 initdb
     startpgback
 
