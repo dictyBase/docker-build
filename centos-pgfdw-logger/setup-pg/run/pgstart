@@ -1,0 +1,18 @@
+#!/bin/bash
+
+startpg() {
+    sysctl -q -w kernel.shmmax=3221225472
+    logger -s starting postgresql service
+    exec su postgres -c "/usr/pgsql-9.2/bin/postmaster -D /var/lib/pgsql/9.2/data"
+}
+
+rsyslogconfig() {
+    if [ ${LOGSTASH_PORT_5544_TCP_ADDR+defined} ]; then
+        echo "local6.*  @@${LOGSTASH_PORT_5544_TCP_ADDR}:${LOGSTASH_PORT_5544_TCP_PORT}" > /etc/rsyslog.d/50-postgres.conf
+    else
+        echo "local6.* /var/log/postgresql.log" > /etc/rsyslog.d/50-postgres.conf
+    fi
+}
+
+rsyslogconfig
+startpg
