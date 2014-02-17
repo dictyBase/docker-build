@@ -30,8 +30,7 @@ usage() {
         -u : User name of database user with replication priviledge which standby server will use to connect
         -p : Password of the above user
 
-    3. Create an user and database, highly optional but recommended. It will also setup postgres_fdw, file_fdw and mysql_fdw extensions
-        under that user in the same database.
+    3. Create an user and database, highly optional but recommended. 
 
        docker run -volumes-from (data-container-instance) (image) /run/pgsetup -C <dbname>
 
