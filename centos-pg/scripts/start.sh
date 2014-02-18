@@ -6,7 +6,7 @@ PGIMAGE=$2
 CONTNAME=$3
 USER=$4
 if $DOCKER images | grep $DATAIMAGE &>/dev/null; then
-    if $DOCKER ps -a | grep pgdata &>/dev/null; then
+    if $DOCKER ps -a | grep $CONTNAME &>/dev/null; then
         echo docker container $DATAIMAGE exist
         echo remove it before running $PGIMAGE
         exit 1

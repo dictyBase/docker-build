@@ -25,3 +25,6 @@ datadump:
 	scripts/backup.sh ${CONTNAME} ${VOLUME} ${PWD}/${HOSTVOL} ${BACKUP}
 
 backup: shutdown datadump rm
+
+restore: 
+	scripts/restore.sh ${DATAIMAGE} ${PGIMAGE} ${CONTNAME} ${VOLUME} ${PWD}/${HOSTVOL} ${BACKUP}
