@@ -1,0 +1,85 @@
+#!/bin/bash
+
+FOLDER=/var/lib/pgsql/9.2
+DATA=${FOLDER}/data
+BACKUP=${FOLDER}/backups
+ARCHIVE=${FOLDER}/archive
+
+ADMIN_USER=${ADMIN_USER:-"docker"}
+ADMIN_PASS=${ADMIN_PASS:-$(pwgen -c -n -s -1 12)}
+ADMIN_DB=${ADMIN_DB:-"docker"}
+
+
+stoppg() {
+    service postgresql-9.2 stop
+}
+
+startpgback() {
+    sysctl -q -w kernel.shmmax=3221225472
+    service postgresql-9.2 start
+}
+
+
+restartpgback() {
+    sysctl -q -w kernel.shmmax=3221225472
+    service postgresql-9.2 restart
+}
+
+
+startpg() {
+    sysctl -q -w kernel.shmmax=3221225472
+    logger -s starting postgresql service
+    exec su postgres -c "/usr/pgsql-9.2/bin/postmaster -D $DATA"
+}
+
+
+preparepg() {
+    
+    service postgresql-9.2 initdb
+    startpgback
+
+    # account setup
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres'"
+    su postgres -s /usr/bin/createuser -- -U postgres -d -E -l -s $ADMIN_USER
+    su postgres -s /usr/bin/psql -- -U postgres -c "ALTER ROLE $ADMIN_USER PASSWORD '$ADMIN_PASS'"
+
+    # add custom configuration; restart to take effect
+    cp /config/pg_hba.conf  $DATA/
+    cp /config/postgresql.conf $DATA/
+    restartpgback
+
+    # create admin database
+    PGPASSWORD=$ADMIN_PASS createdb -U docker docker
+
+    # create folders
+    if [ ! -e $BACKUP ]; then 
+        mkdir -p $BACKUP
+        chown postgres:postgres $BACKUP
+    fi
+
+    if [ ! -e $ARCHIVE ]; then 
+        mkdir -p $ARCHIVE
+        chown postgres:postgres $ARCHIVE
+    fi
+    stoppg
+}
+
+
+# setup database
+if [ -d "$ARCHIVE" ]; then
+    logger -s cluster already initialized cannot start
+    exit 1
+else
+    if [ -d /var/lib/pgsql ]; then
+        chmod g+rx,o+rx /var/lib/pgsql
+    fi
+    preparepg
+    logger -s admin user: $ADMIN_USER
+    logger -s admin password: $ADMIN_PASS
+    logger -s admin database: $ADMIN_DB
+    startpg
+fi
+
+
+
+

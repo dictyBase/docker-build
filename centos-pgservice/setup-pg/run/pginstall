@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# install postgresql(9.2)
+echo 'NETWORKING=yes' > /etc/sysconfig/network
+rpm -ivh http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
+rpm -ivh http://yum.postgresql.org/9.2/redhat/rhel-6-x86_64/pgdg-centos92-9.2-6.noarch.rpm
+yum -y update && yum -y upgrade
+yum -y install postgresql92-server postgresql92-contrib rsync pwgen
+
+
